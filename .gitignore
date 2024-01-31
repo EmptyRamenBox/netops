@@ -9,5 +9,6 @@
 /group_vars/vault
 /group_vars/switches/vault
 /group_vars/routers/vault
+/host_vars/prod
 /configs/*
 /configs_ps/*
