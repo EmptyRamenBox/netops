@@ -1,0 +1,21 @@
+! branch
+! routers template
+{% for backbonertr in groups ['dcnedge'] %}
+!configure terminal revert timer 30
+configure terminal
+{% if  hostvars[inventory_hostname].branchnetworks is defined  %}
+{% for subnet, details in hostvars[inventory_hostname].branchnetworks.items()  %}
+{% if  details.network  and  details.mask is defined %}
+ ip route {{ details.network }} {{ details.mask }} {{ sdwanconfig.sdwan_ip }} 95 name "SDWAN_{{details.network}}_StaticEmergencyRoute"
+{% endif %}
+{% endfor %}
+{% endif %}
+!
+{% if  sdwanconfig.sdwan_config is defined  and sdwanconfig.sdwan_ip is defined  and hostvars[backbonertr].mydcn_gway  is defined %}
+ ip route {{ sdwanconfig.sdwan_gway }} 255.255.255.255 {{ hostvars[backbonertr].mydcn_gway }} 95 name "BCP_{{inventory_hostname}}_viaSDWAN"
+ ip route {{ sdwanconfig.sdwan_ip }} 255.255.255.255 {{ sdwanconfig.sdwan_gway }} 95 name "BCP_{{inventory_hostname}}_viaSDWAN"
+{% endif %}
+end
+! debug the ip routeing table if anything major happens
+debug ip routing
+{% endfor %}

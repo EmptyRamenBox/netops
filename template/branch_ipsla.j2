@@ -1,0 +1,117 @@
+! branch_ipsla configs
+! {{ inventory_hostname }}.cisco
+!
+!
+
+! Save Changes and Enable Local Archive on Router
+! # This will enable the config archive on the end device
+enable
+configure terminal
+ archive
+   path flash:$h-
+   maximum 10
+   end
+write memory
+configure terminal revert timer 10
+
+! Configure Cisco interfaces for SDWAN
+interface {{ sdwanconfig.sdwan_iface }}
+ description === toSpectrumFortinet  SDWAN VPN ===
+ ip address {{ sdwanconfig.sdwan_ip }} {{ sdwanconfig.sdwan_mask }}
+ no shutdown
+ exit
+
+! Configure IP SLA Monitors
+! # This will create objects to monitor online/offline activity
+ip sla 4 
+  icmp-echo {{ elanconfig.mca_ip }} source-interface {{ elanconfig.mca_iface }} 
+  threshold 1000
+  timeout 3000
+  frequency 45
+  exit
+ip sla 3 
+  icmp-echo {{ elanconfig.sa_ip }} source-interface {{ elanconfig.sa_iface }} 
+  threshold 1000
+  timeout 3000
+  frequency 45
+  exit
+ip sla 11
+  icmp-echo 172.17.1.1 source-interface {{ sdwanconfig.sdwan_iface }} 
+  threshold 1000
+  timeout 3000
+  frequency 45
+  exit
+ip sla 12
+  icmp-echo 172.17.1.1 source-interface {{ sdwanconfig.sdwan_iface }} 
+  threshold 1000
+  timeout 3000
+  frequency 45
+  exit
+! # Tell IOS to begin monitoring with ping until the end of time
+ip sla schedule 3 life forever start-time now
+ip sla schedule 4 life forever start-time now
+ip sla schedule 11 life forever start-time now
+ip sla schedule 12 life forever start-time now
+
+
+! IP SLA Tracking Objects
+! # via ELAN Reachability
+track 3 ip sla 3 reachability
+ delay up 6 down 3
+ exit
+track 4 ip sla 4 reachability
+ delay up 6 down 3
+ exit
+! via SDWAN Reachability
+track 11 ip sla 11 reachability
+ delay up 6 down 3
+ exit
+track 12 ip sla 12 reachability
+ delay up 6 down 3
+ exit
+! # Create IP SLA List objects, to report 
+! # TRUE when route via Spectrum ELAN fails
+track 21 ip sla 4 reachability
+ exit
+track 22 list boolean and
+ object 21 not
+track 23 ip sla 3 reachability
+ exit
+track 24 list boolean and
+ object 23 not
+
+
+! Configure Static Routes that use IP SLA Tracking Objects
+! Fortinet SDWAN Routes
+! via McAllen DCN
+ip route {{ sdwanconfig.mcadcn }} 255.255.255.255 {{ sdwanconfig.sdwan_gway }} 181 track 22 name "EmergencyFailover_toMCA_viaSDWAN"
+ip route 0.0.0.0 0.0.0.0 {{ sdwanconfig.sdwan_iface  }} {{ sdwanconfig.sdwan_gway }} 191 track 22 name "EmergencyDefault_toMCA_viaSDWAN"
+! via San Antonio DCN
+ip route {{ sdwanconfig.sadcn }} 255.255.255.255 {{ sdwanconfig.sdwan_gway }} 182 track 24 name "EmergencyFailover_toSA_viaSDWAN"
+ip route 0.0.0.0 0.0.0.0 {{ sdwanconfig.sdwan_iface  }} {{ sdwanconfig.sdwan_gway }} 192 track 24 name "EmergencyDefault_toSA_viaSDWAN"
+! ###########################
+! # [Deprecated] ELAN Routes - Won't be necessary, we will only define dynamic SDWAN routes
+! # ip route 0.0.0.0  0.0.0.0  {{ elanconfig.sa_iface }} {{ elanconfig.sa_ip }} 181 track 4 name "to_MCADCN_viaELAN"
+! # ip route 0.0.0.0  0.0.0.0  {{ elanconfig.mca_iface }} {{ elanconfig.mca_ip }} 182 track 3 name "to_SADCN_viaELAN"
+! #########################
+!
+end
+
+
+! Configue Changes if Successful
+!configue confirm
+
+! Re-enable the Archive to TFTP feature
+configure terminal
+ archive
+  log config
+    logging enable
+    notify syslog contenttype plaintext
+ path tftp://10.1.9.75/BackupConfigs/$h-
+ write-memory
+ time-period 10000
+ end
+write memory
+
+! Debug IP Routing
+debug ip routing

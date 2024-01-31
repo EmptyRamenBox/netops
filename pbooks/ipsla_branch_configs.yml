@@ -1,0 +1,22 @@
+---
+# ipsla_branch_configs.yml
+# 
+# The intent of this playbook is to create configs for branch devices based on
+#   inventory
+#   hostvars
+#   template
+# This will create configs for IP SLA
+#
+#
+- name: PLAY - Write Configs for IP SLA Failover
+  hosts: branch
+  gather_facts: no
+
+  tasks:
+  - name: Creating Branch Router Configs
+    template:
+       src="/home/blackbird/Documents/Ansible/netauto/template/branch_ipsla.j2"
+       dest="/home/blackbird/Documents/Ansible/netauto/configs/{{ inventory_hostname }}-ipsla.cisco"
+
+
+

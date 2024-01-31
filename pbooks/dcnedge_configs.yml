@@ -1,0 +1,23 @@
+---
+# dcnedge_configs.yml
+# 
+# The intent of this playbook is to create configs for branch devices based on
+#   inventory
+#   hostvars
+#   template
+#
+#
+- name: PLAY - Write Configs for Branch Routers
+  hosts: internal
+  connection: local
+  gather_facts: no
+
+  tasks:
+  - name: Creating Branch Router Config
+    template:
+       src="/home/blackbird/Documents/Ansible/netauto/template/dcnedge.j2"
+       dest="/home/blackbird/Documents/Ansible/netauto/configs/backbone-{{ inventory_hostname }}.cisco"
+    with_items: "groups[branch]"
+
+
+

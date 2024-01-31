@@ -1,0 +1,7 @@
+devicetype: 'router'
+ansible_network_os: ios
+ansible_connection: network_cli
+ansible_user: "{{ vault_ansible_username }}"
+ansible_password: "{{ vault_ansible_password }}"
+transport: paramiko
+timeout: 5

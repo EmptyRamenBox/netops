@@ -1,0 +1,55 @@
+# coax
+! Spectrum routers template
+enable
+configure terminal
+hostname {{  hostname  }}
+no ip domain-lookup
+!
+! Configure OSPF
+router ospf 100
+ network 0.0.0.0 0.0.0.0 area 100
+ exit
+
+! Configure Interfaes
+{% for iface, details in hostvars[inventory_hostname].interfaces.items() %}
+{% if details.addresss is defined and details.mask is defined %}
+interface {{ iface }}
+{% if details.nativevlan is defined %}
+ description "this interface is the native default vlan with dot1q"
+ no shutdown
+{% elif details.subif is defined %}
+ description "this interface is encapsulating in dot1q for vlan {{ details.vlan }}"
+ encapsulation dot1q {{ details.vlan }}
+ ip address {{ details.addresss }} {{ details.mask }}
+ no shutdown
+{% else %}
+ ip address {{ details.addresss }} {{ details.mask }}
+ no shutdown
+{% endif %}
+{% elif details.nativevlan is defined  %}
+interface {{ iface }}
+ description "this interface is the native default vlan with dot1q"
+ no shutdown
+{% else %}
+ !ERROR: Unable to retrieve interfaces dict {{ iface | to_nice_json }}
+{% endif %}
+{% endfor %}
+
+
+! Configure SSH
+ip domain name spectrum.net
+crypto key generate rsa general-keys modulus 4096
+ip ssh version 2
+
+! Configure AAA
+aaa new-model
+username stac algorithm-type scrypt secret spectrum123
+aaa authentication login default local
+
+! Configure SSH on the device
+line vty 0 15
+  transport input ssh
+  no password
+  login authentication default
+end
+write memory

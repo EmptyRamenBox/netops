@@ -1,0 +1,496 @@
+---
+# migrate_vids_2024.yml
+#
+# The intent of this playbook is to migrsate tagged vlans from
+# a current_iface to a target_iface in an automated mannner.
+#
+#
+
+
+# Create log Directories on the LocalHost
+- name: Retrieve Date and time - Create Log Directories
+  hosts: localhost
+
+  tasks:
+    - name: Get the Date and Time
+      setup:
+        filter: 'ansible_date_time'
+        gather_subset: '!all'
+    
+    - name: Register Date and Time as Variables
+      set_fact:
+        dtg: '{{ ansible_date_time.date }}'
+        hr: '{{ ansible_date_time.hour }}'
+        mi: '{{ ansible_date_time.minute }}'
+        se: '{{ ansible_date_time.second }}'
+
+    - name: Create Directories for Logs
+      file:
+        path: "{{ item }}"
+        state: directory
+        owner: blackbird
+        group: blackbird
+        mode: 0777
+      loop:
+        - ~/ansible/
+        - ~/ansible/logs/
+        - ~/ansible/logs/migratesubs/
+        - ~/ansible/logs/migratesubs/{{ hostvars.localhost.dtg }}/
+        - ~/ansible/
+        - ~/ansible/logs/
+        - ~/ansible/logs/migratesubs/
+        - ~/ansible/logs/migratesubs/{{ hostvars.localhost.dtg }}/
+
+# Connect to the Network Devices
+- name: Configure Network Devices
+  hosts: all
+  gather_facts: no
+  vars:
+    configbackupsserver: "{{ backupssvr }}"
+    config_revert_timer: 7
+    voipprobe: "{{ voipvti }}"
+
+  
+  tasks:
+
+    - name: Network Maintenance Begin
+      block:
+
+        # gather network device status
+        #
+        #
+        #
+        - name: STEP 1 - Gather All Information
+          ios_facts:
+            gather_subset: all
+
+
+        # debug the output
+        #
+        #
+        #
+        - debug:
+            msg:
+              - "Today is {{ hostvars.localhost.dtg}}"
+              - "IOS version for {{ inventory_hostname }} is:    {{ ansible_net_version}}."
+
+
+        # assess and configure archiveconfig
+        #
+        #
+        #
+        - name: MAJOR STEP 1 - Assess and Configue ArchiveConfig
+          block:
+
+            - name: STEP 2 - verify if archive config is enabled
+              ios_command:
+                commands:
+                  - command: 'show archive'
+              register: archivestatus
+
+            - name: STEP 3 - Debug Current ArchiveStatus State
+              debug:
+                msg:
+                 - "{{ hostvars[inventory_hostname].archivestatus.stdout[0] | to_nice_json }}"
+            
+            - name: STEP 4 - Enable ArchiveConfig if device is not configured
+              block:
+
+                - name: STEP 4 - Enable the ArchiveConfig Feature to local storage
+                  cisco.ios.ios_config:
+                    parents:
+                      - 'archive'
+                    lines:
+                      - 'path flash:'
+                      - 'maximum 10'
+
+                - name: STEP 4 - Save the first snapshot into the ArchiveConfig locally
+                  ios_command:
+                    commands:
+                      - 'write memory'
+
+              when: (( hostvars[inventory_hostname].archivestatus.stdout[0] is defined) and
+                    ('not enabled' in hostvars[inventory_hostname].archivestatus.stdout[0])
+                    )
+        
+            - name: STEP 5 - Enable ArchiveConfig if it is already configured on TFTP
+              block:
+
+                - name: STEP 5 - ReConfigue ArchiveConfig Feature to local storage
+                  cisco.ios.ios_config:
+                    parents:
+                      - 'archive'
+                    lines:
+                      - 'path flash:'
+                      - 'maximum 10'
+
+                - name: STEP 5 - Save the first snapshot into the ArchiveConfig locally
+                  ios_command:
+                    commands:
+                      - 'write memory'
+
+                - name: STEP 5 - Remember that this device was Archiving to TFTP
+                  set_fact:
+                    archivetotftp: "yes" 
+
+              ignore_errors: yes
+              when: (( hostvars[inventory_hostname].archivestatus.stdout[0] is defined) and
+                     ( configbackupsserver in hostvars[inventory_hostname].archivestatus.stdout[0] )
+                    )
+
+            - name: STEP 6 - Verify te ArchiveConfig is enabled
+              ios_command:
+                commands:
+                  - command: 'show archive'
+              register: archivestatus
+
+            - name: STEP 7 - Debug ArchiveStatus State
+              debug:
+                msg:
+                  - "{{ hostvars[inventory_hostname].archivestatus.stdout[0] | to_nice_json }}"
+
+            - name: STEP 8 - Debug ArchiveTFTPStatus State
+              debug:
+                msg:
+                - "{{ hostvars[inventory_hostname].archivetotftp | to_nice_json }}"
+              when: ( hostvars[inventory_hostname].archivetotftp is defined )
+
+
+        # Perform Changes
+        #
+        #
+        #
+        - name: MAJOR STEP 2 - Perform Changes
+          block:
+
+            - name: STEP 9-10 - Distribution Layer - Perform Changes
+              block:
+
+                - name: STEP 9-10 - DISTR - Enable VoIP VTI
+                  cisco.ios.ios_config:
+                    parents:
+                      - 'interface vlan 20'
+                    lines:
+                      - 'ip address {{ voipprobe}}  255.255.255.0'
+                      - 'description === VoIP Probe on Distribution Switch ==='
+                      - 'no shutdown'
+                  vars:
+                    ansible_command_timeout: "{{ (config_revert_timer * 60 ) + 60 }}"
+
+                - name: STEP 9-10 - DISTR - Enable the Config Rollback Feature
+                  ios_command:
+                    commands:
+                      - command: 'configure terminal revert timer {{ config_revert_timer }}'
+
+                - name: STEP 9-10 - DISTR - DEFAULT the Current Interface
+                  cisco.ios.ios_config:
+                    lines:
+                      - 'default interface {{ hostvars[inventory_hostname].switch_ifaces.current_iface }}'
+          
+                - name: STEP 9-10 - DISTR - DISABLE the Current Interface
+                  cisco.ios.ios_config:
+                    parents:
+                      - 'interface {{ hostvars[inventory_hostname].switch_ifaces.current_iface }}'
+                    lines:
+                      - 'shutdown'
+                      - 'description === Uplink Port Disabled ==='
+                  vars:
+                    ansible_command_timeout: "{{ (config_revert_timer * 60 ) + 60 }}"
+
+                - name: STEP 9-10 - DISTR - MIGRATE tagging onto the target_interface
+                  cisco.ios.ios_config:
+                    parents:
+                      - 'interface {{ hostvars[inventory_hostname].switch_ifaces.target_iface }}'
+                    lines:
+                      - 'switchport trunk allowed vlan add {{ item }}'
+                  vars:
+                    ansible_command_timeout: "{{ (config_revert_timer * 60 ) + 60 }}"
+                  loop: "{{ hostvars[inventory_hostname].vids }}"
+
+
+                - name: STEP 9-10 - DISTR - Wait for the device to come online
+                  wait_for:
+                    host: "{{ inventory_hostname }}"
+                    port: 22
+                    delay: 15
+                    timeout: "{{ config_revert_timer * 60 }}"
+                  delegate_to: localhost
+
+              ignore_errors: yes
+              when: (('distribution' in groups) and
+                     ( inventory_hostname in groups['distribution'])
+                    )
+
+            - name: STEP 11-12 - CORE Layer - Perform Changes
+              block:
+
+                - name: STEP 11-12 - CORE - Enable the Config Rollback Feature
+                  ios_command:
+                    commands:
+                      - command: 'configure terminal revert timer {{ config_revert_timer }}'
+
+                - name: STEP 11-12 - Assess if Change is needed
+                  block:
+
+                   - name: STEP 11-12 - Assess if Changed is needed
+                     set_fact:
+                        changeneeded: "yes"
+                     when: "{{ ( hostvars[inventory_hostname].router_ifaces.current_iface + '.' + item ) in hostvars[inventory_hostname].ansible_net_interfaces }}"
+                     loop: "{{ hostvars[inventory_hostname].vids }}"
+
+                   - name: STEP 11-12 - Attempt to Loop through Current Interface Subs
+                     debug:
+                       msg:
+                        - "Looping through interface.... {{ ( hostvars[inventory_hostname].router_ifaces.current_iface + '.' + item ) }}"
+                     when: "{{ ( hostvars[inventory_hostname].router_ifaces.current_iface + '.' + item ) in hostvars[inventory_hostname].ansible_net_interfaces  and ( 'deleted' not in hostvars[inventory_hostname].ansible_net_interfaces.(hostvars[inventory_hostname].router_ifaces.current_iface + '.' + item).operstatus ) }}"
+                     loop: "{{ hostvars[inventory_hostname].vids }}"
+
+
+                   - name: STEP 11-12 - Loop through interfaces...
+                     set_fact:
+                        changeneeded: "yes"
+                     with_items: "{{ lookup('dict', hostvars[inventory_hostname].ansible_net_interfaces ) }}"
+                     
+
+                   - name: STEP 11-12 - Output if change is needed
+                     debug:
+                       msg:
+                        - "Change is needed for the core {{ hostvars[inventory_hostname].changeneeded }}"
+
+                  
+
+
+                - name: STEP 11-12 - CORE- DEFAULT the Current Interface
+                  cisco.ios.ios_config:
+                    lines:
+                      - 'default interface {{ hostvars[inventory_hostname].router_ifaces.current_iface }}'
+
+                - name: STEP 11-12 - CORE - DISABLE the Current Interface
+                  cisco.ios.ios_config:
+                    parents:
+                      - 'interface {{ hostvars[inventory_hostname].router_ifaces.current_iface }}'
+                    lines:
+                      - 'shutdown'
+                      - 'description === Downlink Port Disabled ==='
+                  vars:
+                    ansible_command_timeout: "{{ (config_revert_timer * 60 ) + 60 }}"
+
+
+                - name: STEP 11-12 - CORE - DELETE the Subs tied to the Current Interface
+                  cisco.ios.ios_config:
+                    lines:
+                      - 'no interface {{ hostvars[inventory_hostname].router_ifaces.current_iface }}.{{ item.value.name }}'
+                  vars:
+                    ansible_command_timeout: "{{ (config_revert_timer * 60 ) + 60 }}"
+                  with_items: "{{ lookup('dict', hostvars[inventory_hostname].router_subnets ) }}"
+
+
+                - name: STEP 11-12 - CORE - MIGRATE the Subs to the existing DATA iface
+                  cisco.ios.ios_config:
+                    parents:
+                      - 'interface {{ hostvars[inventory_hostname].router_ifaces.target_iface }}.{{ item.value.name }}'
+                    lines:
+                      - 'encapsulation dot1q {{ item.value.name  }}'
+                      - 'ip address {{ item.value.netip }}  {{ item.value.mask }}'
+                      - 'description {{ item.value.description }}'
+                      - 'no shutdown'
+                  vars:
+                    ansible_command_timeout: "{{ (config_revert_timer * 60 ) + 60 }}"
+                  with_items: "{{ lookup('dict', hostvars[inventory_hostname].router_subnets ) }}"
+
+
+                - name: STEP 11-12 - CORE - Wait for the device to come online
+                  wait_for:
+                    host: "{{ inventory_hostname }}"
+                    port: 22
+                    delay: 15
+                    timeout: "{{ config_revert_timer * 60 }}"
+                  delegate_to: localhost
+
+
+              ignore_errors: yes
+              when: ( (('core' in groups) or ('collapsedcore' in groups)) and
+                     (( inventory_hostname in groups['core']) or ( inventory_hostname in groups['collapsedcore']))
+                    )
+
+
+          when: ((hostvars[inventory_hostname].archivestatus.stdout[0] is defined) and
+                 ( 'not enabled' not in hostvars[inventory_hostname].archivestatus.stdout[0])
+                )
+
+        # Test Connectivity
+        #
+        #
+        #
+        - name: MAJOR STEP 5 - Test Connectivity
+          block:
+            - name: STEP 13 - ALL - Wait for device to come online
+              wait_for:
+                host: "{{ inventory_hostname }}"
+                port: 22
+                delay: 15
+                timeout: "{{ config_revert_timer * 60 }}"
+              delegate_to: localhost
+              ignore_errors: yes
+              register: connectstatus
+
+            - name: STEP 14 - Debug connectstatus State
+              debug:
+                msg:
+                 - "{{ hostvars[inventory_hostname].connectstatus }}"
+        
+        # Commit Configuration
+        #
+        #
+        #
+        - name: MAJOR STEP 6 - Commit the Config ONLY if Reconnectivity is successful
+          block:
+            - name: STEP 15 - ALL - TEST Connection
+              wait_for:
+                host: "{{ inventory_hostname }}"
+                port: 22
+                delay: 15
+                timeout: "{{ config_revert_timer * 60 }}"
+              delegate_to: localhost
+              ignore_errors: yes
+
+            - name: STEP 16 - ALL - CONFIRM Configuation Change
+              ios_command:
+                commands:
+                  - 'configure confirm'
+              register: configconfirmed
+              ignore_errors: yes
+
+
+            - name: STEP 17 - Debug connectstatus State
+              debug:
+                msg:
+                 - "{{ hostvars[inventory_hostname].configconfirmed }}"
+          
+          when: (( hostvars[inventory_hostname].connectstatus)
+                )
+        
+        # Reset Archive over TFTP
+        #
+        #
+        #
+        - name: FINAL STEP - Reenable Archive over TFTP
+          block:
+
+            - name: FINAL STEP - Enable the ArchiveConfig Feature, if not enabled
+              cisco.ios.ios_config:
+                parents:
+                  - 'archive'
+                lines:
+                  - 'path tftp://{{ configbackupsserver }}/$h-'
+                  - 'write-memory'
+                  - 'time-period 10080'
+
+            - name: FINAL STEP - Enable the ArchiveConfig Feature, if not enabled
+              cisco.ios.ios_config:
+                parents:
+                  - 'archive'
+                  - 'log config'
+                lines:
+                  - 'logging enable'
+                  - 'notify syslog contenttype plaintext'
+                  - 'hidekeys'
+            - name: FINAL STEP - Save the first snapshot into the ArchiveConfig
+              ios_command:
+                commands:
+                  - 'write memory'
+
+          when: ((hostvars[inventory_hostname].archivestatus.stdout[0] is defined) and
+                 (hostvars[inventory_hostname].archivetotftp is defined)
+                )
+
+        
+        # Write Report of Changes Performed
+        #
+        #
+        #
+        #
+        - name: Write Summary Report
+          copy:
+            content: |
+              {# Jinja2: lstrip blocks: True #}
+              IOS Device Info:
+                {# Router Info #}
+                #### Router Migration Details ###################
+                {% for host in groups ['routers'] %}
+                Hostname: {{ inventory_hostname }}
+                  Model: {{ ansible_net_model }}
+                  Cisco IOS Firmware:
+                      Current version is:  {{ hostvars[host].ansible_net_version }}
+                  Global Revert Timer:
+                    {{ config_revert_timer }}
+
+                  Connection State:
+                  {% if hostvars[host].connectstatus is defined %}
+                    Connect Status:  {{ hostvars[host].connectstatus | default('   Undefined') }}
+                  {% else %}
+                    Connect Status:   Undefined
+                  {% endif %}
+                  Router Interfaces Part. in Migration:
+                  {% if hostvars[host].router_ifaces is defined %}
+                    Deprecated Interface:  {{ hostvars[host].router_ifaces.current_iface | default('   Undefined') }}
+                    Target Interface:  {{ hostvars[host].router_ifaces.target_iface | default('   Undefined') }}
+                  {% else %}
+                    Undefined
+                  {% endif %}
+
+                  Router Subnets Part. in Migration (intended changes):
+                  {% if host in groups['routers']%}
+                    ! Default and Disable the Physical Interface
+                    default interface {{ hostvars[host].router_ifaces.current_iface | default('   Undefined')  }}
+                    interface {{ hostvars[host].router_ifaces.current_iface | default('   Undefined')  }}
+                      shutdown
+                      description === Downlink Disabled ====
+                      exit
+                    !
+                    {% for subnet, details in hostvars[host].router_subnets.items() %}
+                      {% if details.name and details.netip and details.mask is defined %}
+                    ! Delete old subinterface
+                    no interface {{ hostvars[host].router_ifaces.current_iface | default('  Undefined') }}.{{ details.name | default('  Undefined') }}
+                    ! Configure New Subinterface
+                    interface {{ hostvars[host].router_ifaces.current_iface | default('  Undefined') }}.{{ details.name | default('  Undefined') }}
+                      encapsulation dot1q {{ details.name | default('  Undefined') }}
+                      ip address {{ details.netip | default('  Undefined') }}  {{ details.mask | default('  Undefined') }}
+                      no shutdown
+                      description {{ details.description | default('  Undefined') }}
+                      exit
+                      {% endif %}
+                    {% endfor %}
+                  {% endif %}
+
+                {% endfor %}
+
+
+                {# Switch Info #}
+                #### Switch Migration Details ###################
+                {% for host in groups ['switches'] %}
+                Hostname: {{ inventory_hostname }}
+                  Model: {{ ansible_net_model }}
+                  Cisco IOS Firmware:
+                      Current version is:  {{ hostvars[host].ansible_net_version }}
+                  Global Revert Timer:
+                    {{ config_revert_timer }}
+
+                  Connection State:
+                  {% if hostvars[host].connectstatus is defined %}
+                    Connect Status:  {{ hostvars[host].connectstatus | default('   Undefined') }}
+                  {% else %}
+                    Connect Status:   Undefined
+                  {% endif %}
+
+                  Switch Interfaces Part. in Migration:
+                  {% if hostvars[host].switch_ifaces is defined %}
+                    Deprecated Interface: {{ hostvars[host].switch_ifaces.current_iface | default('   Undefined') }}
+                    Target Interface: {{ hostvars[host].switch_ifaces.target_iface | default('   Undefined') }}
+                  {% else %}
+                    Undefined
+                  {% endif %}
+                {% endfor %}
+            dest: '~/ansible/logs/migratesubs/{{ hostvars.localhost.dtg }}/{{ hostvars.localhost.hr }}-{{ hostvars.localhost.mi }}-{{ hostvars.localhost.se }}.txt'
+          run_once: yes
+          ignore_errors: yes

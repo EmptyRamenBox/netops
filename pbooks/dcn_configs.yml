@@ -1,0 +1,22 @@
+---
+# dcn_configs.yml
+# 
+# The intent of this playbook is to create configs for branch devices based on
+#   inventory
+#   hostvars
+#   template
+#
+#
+- name: PLAY - Write Configs for Branch Routers
+  hosts: dcn 
+  connection: local
+  gather_facts: false
+
+  tasks:
+  - name: Creating Branch Router Config
+    template:
+       src="/home/blackbird/Documents/Ansible/netauto/template/branch.j2"
+       dest="/home/blackbird/Documents/Ansible/netauto/configs/{{ inventory_hostname }}.cisco"
+
+
+

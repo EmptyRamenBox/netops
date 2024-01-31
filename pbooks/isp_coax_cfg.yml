@@ -1,0 +1,17 @@
+---
+# isp_coax_configs
+#
+#       The intent of this playbook is to auto provision devices using inventory, templates, and hostvars
+#
+#
+- name: PLAY - Write Configs for ISP Coax Routers
+  hosts: coax
+  connection: local
+  gather_facts: no
+
+  tasks:
+  - name: Creating Coax Router Configs
+    template:
+       src="/home/blackbird/Documents/Ansible/netauto/template/coax.j2"
+       dest="/home/blackbird/Documents/Ansible/netauto/configs/{{ inventory_hostname }}.cisco"
+

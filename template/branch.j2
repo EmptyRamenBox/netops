@@ -1,0 +1,74 @@
+! branch configuration
+! {{ inventory_hostname }}.cisco
+!
+!
+enable
+configure terminal
+hostname {{ hostname }}
+no ip domain-lookup
+
+
+! internal EIGRP config
+router eigrp 1
+ network 0.0.0.0 0.0.0.0
+ exit
+
+! Configure Interfaes
+{% for iface, details in hostvars[inventory_hostname].interfaces.items() %}
+{% if details.addresss is defined and details.mask is defined %}
+interface {{ iface }}
+{% if details.nativevlan is defined %}
+ description "this interface is the native default vlan with dot1q"
+ no shutdown
+{% elif details.subif is defined %}
+ description "this interface is encapsulating in dot1q for vlan {{ details.vlan }}"
+ encapsulation dot1q {{ details.vlan }}
+ ip address {{ details.addresss }} {{ details.mask }}
+ no shutdown
+{% else %}
+ ip address {{ details.addresss }} {{ details.mask }}
+ no shutdown
+{% endif %}
+{% elif details.nativevlan is defined  %}
+interface {{ iface }}
+ description "this interface is the native default vlan with dot1q"
+ no shutdown
+{% else %}
+ !ERROR: Unable to retrieve interfaces dict {{ iface | to_nice_json }}
+{% endif %}
+{% endfor %}
+
+{% if hostvars[inventory_hostname].branchnetworks is defined %}
+! Configure DHCP
+{% for networkname, detailsd in hostvars[inventory_hostname].branchnetworks.items() %}
+ {% if detailsd.address is defined and detailsd.mask and detailsd.dhcpsvr is defined %}
+ip dhcp excluded-address {{ detailsd.address }}
+ip dhcp pool {{ networkname }}
+ network {{ detailsd.network }} {{ detailsd.mask }}
+ default-router {{ detailsd.address }}
+ exit
+ {% endif %}
+{% endfor %}
+{% endif %}
+
+! Configure SSH
+ip domain name bigblue.com
+crypto key generate rsa general-keys modulus 4096
+ip ssh version 2
+
+! Configure AAA
+aaa new-model
+username alexis algorithm-type scrypt secret Infer037
+aaa authentication login default local
+
+! Configure SSH on the device
+line con 0
+  login authentication default
+exit
+line vty 0 15
+  transport input ssh
+  no password
+  login authentication default
+end
+write memory
+
