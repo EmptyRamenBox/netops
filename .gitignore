@@ -1,6 +1,7 @@
 /vault
 /vaultpassword.txt
 /inventory/vault
+/inventory/private
 /inventory/group_vars/vault
 /inventory/group_vars/routers/vault
 /inventory/group_vars/switches/vault
