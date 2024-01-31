@@ -12,3 +12,7 @@
 /host_vars/prod
 /configs/*
 /configs_ps/*
+# vault files are ansible-vault files to store creds
+# vaultpassword.txt is a text file to decrypt the vault file
+# private-inventories and prod-host_vars have been excluded
+# private configs, configs_ps have also been excluded
