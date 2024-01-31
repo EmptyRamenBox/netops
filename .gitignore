@@ -1,0 +1,12 @@
+./vault
+./vaultpassword.txt
+./inventory/vault
+./inventory/group_vars/vault
+./inventory/group_vars/routers/vault
+./inventory/group_vars/switches/vault
+./inventory/host_vars/vault
+./group_vars/vault
+./group_vars/switches/vault
+./group_vars/routers/vault
+./configs/*
+./configs_ps/*
