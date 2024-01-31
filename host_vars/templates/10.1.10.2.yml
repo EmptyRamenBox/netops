@@ -1,0 +1,13 @@
+# 10.1.10.2.yml
+# Host Vars for Distribution/Switch below Core
+# Sample
+
+
+# Switch_Ifaces dictate where the VIDs are currently tagging,
+# and where they will be moved to (target)
+switch_ifaces: {
+    current_iface: "GigabitEthernet0/2",
+    target_iface:  "GigabitEthernet0/1"
+}
+# L2 VLANs which are tagging, and need to be moved
+vids: [ "20","30" ]

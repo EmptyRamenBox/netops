@@ -1,0 +1,26 @@
+# 10.1.10.1.yml
+# Host Vars for Core Router
+# Sample
+
+# object is used to migrate vids from Current to Target iface
+router_ifaces: {
+    current_iface: "GigabitEthernet2",
+    target_iface:  "GigabitEthernet1"
+}
+# Vids to be Migrated
+vids: [ "20","30" ]
+# Subnets to be Migrated from Current_Iface => Target_Iface
+router_subnets: {
+    20: {
+        name: "20",
+        netip: "10.20.10.1",
+        mask:  "255.255.255.0",
+        description: "=== VOIP Subinterface ==="
+    },
+    30: {
+        name: "30",
+        netip: "10.30.10.1",
+        mask:  "255.255.255.240",
+        description: "=== ATM ATT Subinterface ==="
+    }
+}

@@ -1,0 +1,48 @@
+# branch10
+# inventory file
+#
+#
+
+
+# L2 Switches
+[access]
+#
+
+
+# L2 Switches Connecting Multiple Access Switches
+# Add here when a switch needs to perform VLAN migration
+[distribution]
+10.1.10.2
+
+# L3 Switch/L3 Router in a 2 tier environment
+[collapsedcore]
+#
+
+# L3 Router
+[core]
+10.1.10.1
+
+
+
+[switches:hildren]
+access
+distribution
+#
+
+[routers:children]
+collapsedcore
+#core
+#
+
+[wan:children]
+routers
+
+[lan:children]
+switches
+
+# Required to highlight all devices in this inventory file
+[networkdevices:children]
+access
+distribution
+collapsedcore
+core
