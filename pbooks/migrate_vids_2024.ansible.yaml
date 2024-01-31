@@ -166,16 +166,16 @@
             - name: STEP 9-10 - Distribution Layer - Perform Changes
               block:
 
-                - name: STEP 9-10 - DISTR - Enable VoIP VTI
-                  cisco.ios.ios_config:
-                    parents:
-                      - 'interface vlan 20'
-                    lines:
-                      - 'ip address {{ voipprobe}}  255.255.255.0'
-                      - 'description === VoIP Probe on Distribution Switch ==='
-                      - 'no shutdown'
-                  vars:
-                    ansible_command_timeout: "{{ (config_revert_timer * 60 ) + 60 }}"
+                #- name: STEP 9-10 - DISTR - Enable VoIP VTI
+                #  cisco.ios.ios_config:
+                #    parents:
+                #      - 'interface vlan 20'
+                #    lines:
+                #      - 'ip address {{ voipprobe}}  255.255.255.0'
+                #      - 'description === VoIP Probe on Distribution Switch ==='
+                #      - 'no shutdown'
+                #  vars:
+                #    ansible_command_timeout: "{{ (config_revert_timer * 60 ) + 60 }}"
 
                 - name: STEP 9-10 - DISTR - Enable the Config Rollback Feature
                   ios_command:
@@ -232,25 +232,30 @@
                 - name: STEP 11-12 - Assess if Change is needed
                   block:
 
-                   - name: STEP 11-12 - Assess if Changed is needed
+                   - name: STEP 11-12 - Assert if Changed is needed
                      set_fact:
                         changeneeded: "yes"
-                     when: "{{ ( hostvars[inventory_hostname].router_ifaces.current_iface + '.' + item ) in hostvars[inventory_hostname].ansible_net_interfaces }}"
-                     loop: "{{ hostvars[inventory_hostname].vids }}"
+                     when: (( router_ifaces.current_iface in ansible_net_interfaces) and
+                          (hostvars[inventory_hostname].ansible_net_interfaces[router_ifaces.current_iface].operstatus == 'administratively down') )
+
+
+                   - name: STEP 11-12 - Assert if Changed is NOT needed
+                     set_fact:
+                        changeneeded: "no"
+                     when: (( router_ifaces.current_iface in ansible_net_interfaces) and
+                          (hostvars[inventory_hostname].ansible_net_interfaces[router_ifaces.current_iface].operstatus != 'administratively down'))
+
+                   #- name: STEP 11-12 - Debug Ansible Net Interfaces
+                   #  debug:
+                   #   var: hostvars[inventory_hostname].ansible_net_interfaces[router_ifaces.current_iface]
+
 
                    - name: STEP 11-12 - Attempt to Loop through Current Interface Subs
                      debug:
                        msg:
-                        - "Looping through interface.... {{ ( hostvars[inventory_hostname].router_ifaces.current_iface + '.' + item ) }}"
-                     when: "{{ ( hostvars[inventory_hostname].router_ifaces.current_iface + '.' + item ) in hostvars[inventory_hostname].ansible_net_interfaces  and ( 'deleted' not in hostvars[inventory_hostname].ansible_net_interfaces.(hostvars[inventory_hostname].router_ifaces.current_iface + '.' + item).operstatus ) }}"
-                     loop: "{{ hostvars[inventory_hostname].vids }}"
+                        - "Interface: {{ item.key }},   config: {{ item.value | to_nice_yaml }}"
+                     loop: "{{ ansible_net_interfaces | dict2items }}"
 
-
-                   - name: STEP 11-12 - Loop through interfaces...
-                     set_fact:
-                        changeneeded: "yes"
-                     with_items: "{{ lookup('dict', hostvars[inventory_hostname].ansible_net_interfaces ) }}"
-                     
 
                    - name: STEP 11-12 - Output if change is needed
                      debug:
